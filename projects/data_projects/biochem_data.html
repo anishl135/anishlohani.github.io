@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bio-Data Explorer | Anish Lohani</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --text-light: #f1f5f9;
+            --text-dim: #94a3b8;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-light);
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            display: flex;
+            justify-content: center;
+            padding: 40px 20px;
+            margin: 0;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1000px;
+            background: var(--card-bg);
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+            border: 1px solid #334155;
+        }
+
+        header { margin-bottom: 30px; }
+        h1 { margin: 0; font-size: 1.8rem; letter-spacing: -0.025em; }
+        p { color: var(--text-dim); margin-top: 8px; font-size: 0.95rem; }
+
+        .controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+            background: rgba(15, 23, 42, 0.5);
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .control-group { display: flex; flex-direction: column; gap: 8px; }
+        label { font-size: 0.8rem; font-weight: 600; color: var(--accent); text-transform: uppercase; }
+
+        select {
+            background: #0f172a;
+            color: white;
+            border: 1px solid #475569;
+            padding: 10px;
+            border-radius: 8px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 500px;
+            width: 100%;
+        }
+
+        #loader {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: var(--accent);
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Biochemical Property Explorer</h1>
+        <p>Interactive visualization of FDA-approved drugs via EBI ChEMBL API.</p>
+    </header>
+
+    <div class="controls">
+        <div class="control-group">
+            <label>X-Axis Parameter</label>
+            <select id="xAxisSelect">
+                <option value="full_mwt">Molecular Weight (Da)</option>
+                <option value="alogp">Lipophilicity (AlogP)</option>
+                <option value="psa">Polar Surface Area (PSA)</option>
+                <option value="hba">H-Bond Acceptors</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <label>Y-Axis Parameter</label>
+            <select id="yAxisSelect">
+                <option value="alogp">Lipophilicity (AlogP)</option>
+                <option value="full_mwt">Molecular Weight (Da)</option>
+                <option value="psa">Polar Surface Area (PSA)</option>
+                <option value="hbd">H-Bond Donors</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <div id="loader">Processing Bio-Data...</div>
+        <canvas id="bioChart"></canvas>
+    </div>
+</div>
+
+<script>
+    let myChart;
+    let rawMolecules = [];
+
+    // Initialize
+    async function init() {
+        showLoader(true);
+        await fetchData();
+        renderChart();
+        showLoader(false);
+
+        // Listen for changes
+        document.getElementById('xAxisSelect').addEventListener('change', updateChart);
+        document.getElementById('yAxisSelect').addEventListener('change', updateChart);
+    }
+
+    async function fetchData() {
+        try {
+            // Fetching 60 approved small molecules
+            const url = 'https://www.ebi.ac.uk/chembl/api/data/molecule?molecule_type=Small%20molecule&max_phase=4&format=json&limit=60';
+            const response = await fetch(url);
+            const data = await response.json();
+            rawMolecules = data.molecules.filter(m => m.molecule_properties && m.pref_name);
+        } catch (e) {
+            console.error("API Error:", e);
+        }
+    }
+
+    function getChartData() {
+        const xKey = document.getElementById('xAxisSelect').value;
+        const yKey = document.getElementById('yAxisSelect').value;
+
+        return rawMolecules.map(m => ({
+            x: parseFloat(m.molecule_properties[xKey]),
+            y: parseFloat(m.molecule_properties[yKey]),
+            label: m.pref_name
+        })).filter(point => !isNaN(point.x) && !isNaN(point.y));
+    }
+
+    function renderChart() {
+        const ctx = document.getElementById('bioChart').getContext('2d');
+        const xLabel = document.getElementById('xAxisSelect').options[document.getElementById('xAxisSelect').selectedIndex].text;
+        const yLabel = document.getElementById('yAxisSelect').options[document.getElementById('yAxisSelect').selectedIndex].text;
+
+        myChart = new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Approved Molecules',
+                    data: getChartData(),
+                    backgroundColor: 'rgba(56, 189, 248, 0.6)',
+                    borderColor: '#38bdf8',
+                    pointRadius: 6,
+                    pointHoverRadius: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${ctx.raw.label}: [X: ${ctx.raw.x}, Y: ${ctx.raw.y}]`
+                        }
+                    },
+                    legend: { display: false }
+                },
+                scales: {
+                    x: { 
+                        title: { display: true, text: xLabel, color: '#94a3b8' },
+                        grid: { color: '#334155' },
+                        ticks: { color: '#94a3b8' }
+                    },
+                    y: { 
+                        title: { display: true, text: yLabel, color: '#94a3b8' },
+                        grid: { color: '#334155' },
+                        ticks: { color: '#94a3b8' }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateChart() {
+        const newData = getChartData();
+        const xLabel = document.getElementById('xAxisSelect').options[document.getElementById('xAxisSelect').selectedIndex].text;
+        const yLabel = document.getElementById('yAxisSelect').options[document.getElementById('yAxisSelect').selectedIndex].text;
+
+        myChart.data.datasets[0].data = newData;
+        myChart.options.scales.x.title.text = xLabel;
+        myChart.options.scales.y.title.text = yLabel;
+        myChart.update();
+    }
+
+    function showLoader(show) {
+        document.getElementById('loader').style.display = show ? 'block' : 'none';
+    }
+
+    init();
+</script>
+</body>
+</html>
